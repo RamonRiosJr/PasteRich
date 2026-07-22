@@ -407,6 +407,7 @@ def main() -> None:
 
     image = create_image()
     menu = pystray.Menu(
+        pystray.MenuItem(lambda text: f"Hotkey: {config.get('hotkey')}", lambda icon, item: None, enabled=False),
         pystray.MenuItem('Paste Rich', paste_rich),
         pystray.MenuItem('Change Hotkey', prompt_hotkey_change),
         pystray.MenuItem('Run on Startup', toggle_startup, checked=is_startup_enabled),
