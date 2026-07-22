@@ -12,6 +12,8 @@ import keyboard
 import pystray
 from PIL import Image
 from typing import Optional, Dict, Any
+import tkinter as tk
+from tkinter import simpledialog
 
 # ---------------------------------------------------------
 # OS-Specific Imports and Helpers
@@ -377,6 +379,27 @@ def quit_app(icon: pystray.Icon, item: Any) -> None:
     logging.info("Shutting down PasteRich.")
     icon.stop()
 
+def prompt_hotkey_change(icon: pystray.Icon, item: Any) -> None:
+    """Spawns a native UI popup to change the hotkey dynamically."""
+    root = tk.Tk()
+    root.withdraw() # Hide the main window
+    new_hotkey = simpledialog.askstring("Change Hotkey", "Enter new hotkey (e.g., ctrl+shift+v):", initialvalue=config.get('hotkey'))
+    root.destroy()
+    
+    if new_hotkey and new_hotkey.strip():
+        new_hotkey = new_hotkey.strip().lower()
+        config['hotkey'] = new_hotkey
+        
+        try:
+            with open(get_config_path(), 'w') as f:
+                json.dump(config, f, indent=4)
+            
+            keyboard.unhook_all_hotkeys()
+            keyboard.add_hotkey(new_hotkey, paste_rich, suppress=False)
+            logging.info(f"Hotkey dynamically changed to {new_hotkey}")
+        except Exception as e:
+            logging.error(f"Failed to change hotkey: {e}")
+
 def main() -> None:
     if "--paste" in sys.argv:
         paste_rich()
@@ -385,6 +408,7 @@ def main() -> None:
     image = create_image()
     menu = pystray.Menu(
         pystray.MenuItem('Paste Rich', paste_rich),
+        pystray.MenuItem('Change Hotkey', prompt_hotkey_change),
         pystray.MenuItem('Run on Startup', toggle_startup, checked=is_startup_enabled),
         pystray.MenuItem('Quit', quit_app)
     )
