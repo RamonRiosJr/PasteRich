@@ -6,18 +6,20 @@ import threading
 import subprocess
 import tempfile
 import json
+import logging
 import markdown
 import keyboard
 import pystray
 from PIL import Image
+from typing import Optional, Dict, Any
 
 # ---------------------------------------------------------
 # OS-Specific Imports and Helpers
 # ---------------------------------------------------------
 
-IS_WIN = sys.platform == 'win32'
-IS_MAC = sys.platform == 'darwin'
-IS_LINUX = sys.platform.startswith('linux')
+IS_WIN: bool = sys.platform == 'win32'
+IS_MAC: bool = sys.platform == 'darwin'
+IS_LINUX: bool = sys.platform.startswith('linux')
 
 if IS_WIN:
     import win32clipboard
@@ -25,48 +27,61 @@ if IS_WIN:
     import win32com.client
 
 # ---------------------------------------------------------
-# Configuration
+# Configuration & Logging
 # ---------------------------------------------------------
 
-def get_exe_dir():
+def get_exe_dir() -> str:
+    """Returns the directory of the executable or script."""
     if getattr(sys, 'frozen', False):
         return os.path.dirname(sys.executable)
     return os.path.dirname(os.path.abspath(__file__))
 
-def get_config_path():
+# Setup Logging
+log_path: str = os.path.join(get_exe_dir(), 'pasterich.log')
+logging.basicConfig(
+    filename=log_path,
+    level=logging.INFO,
+    format='%(asctime)s [%(levelname)s] %(message)s'
+)
+logging.info("PasteRich starting up...")
+
+def get_config_path() -> str:
+    """Returns the path to the configuration JSON file."""
     return os.path.join(get_exe_dir(), 'config.json')
 
-def load_config():
-    default_config = {
+def load_config() -> Dict[str, Any]:
+    """Loads configuration from config.json, or creates a default if missing."""
+    default_config: Dict[str, str] = {
         "hotkey": "ctrl+win+v" if IS_WIN else "cmd+ctrl+v",
         "theme": "monokai"
     }
-    config_path = get_config_path()
+    config_path: str = get_config_path()
     
     if not os.path.exists(config_path):
         try:
             with open(config_path, 'w') as f:
                 json.dump(default_config, f, indent=4)
+            logging.info("Created default config.json")
         except Exception as e:
-            print(f"Failed to create default config: {e}")
+            logging.error(f"Failed to create default config: {e}")
         return default_config
         
     try:
         with open(config_path, 'r') as f:
             user_config = json.load(f)
-            # Merge with defaults
             return {**default_config, **user_config}
     except Exception as e:
-        print(f"Failed to load config: {e}")
+        logging.error(f"Failed to load config: {e}")
         return default_config
 
-config = load_config()
+config: Dict[str, Any] = load_config()
 
 # ---------------------------------------------------------
 # Clipboard Operations
 # ---------------------------------------------------------
 
-def read_clipboard_text():
+def read_clipboard_text() -> Optional[str]:
+    """Reads the current text content from the system clipboard."""
     if IS_WIN:
         try:
             win32clipboard.OpenClipboard()
@@ -79,33 +94,35 @@ def read_clipboard_text():
             win32clipboard.CloseClipboard()
             return text
         except Exception as e:
-            print(f"Failed to read clipboard: {e}")
+            logging.error(f"Failed to read clipboard: {e}")
             return None
     elif IS_MAC:
         try:
             return subprocess.check_output(['pbpaste'], text=True)
-        except:
+        except Exception as e:
+            logging.error(f"pbpaste error: {e}")
             return None
     elif IS_LINUX:
         try:
-            # Try xclip first
             return subprocess.check_output(['xclip', '-selection', 'clipboard', '-o'], text=True)
-        except:
+        except Exception as e:
             try:
-                # Fallback to xsel
                 return subprocess.check_output(['xsel', '-b', '-o'], text=True)
-            except:
+            except Exception as e2:
+                logging.error(f"Linux clipboard read error: {e2}")
                 return None
+    return None
 
-def write_clipboard_html(text, html):
-    # Try to load custom CSS or use default GitHub style
-    css = ""
-    custom_css_path = os.path.join(get_exe_dir(), 'style.css')
+def write_clipboard_html(text: str, html: str) -> None:
+    """Injects HTML and fallback text into the system clipboard formatting."""
+    css: str = ""
+    custom_css_path: str = os.path.join(get_exe_dir(), 'style.css')
     if os.path.exists(custom_css_path):
         try:
             with open(custom_css_path, 'r') as f:
                 css = f"<style>\n{f.read()}\n</style>\n"
-        except: pass
+        except Exception as e:
+            logging.warning(f"Could not load custom css: {e}")
     else:
         css = """
 <style>
@@ -121,7 +138,6 @@ table tr:nth-child(2n) { background-color: #f6f8fa; }
 """
 
     if IS_WIN:
-        # Format for Windows CF_HTML
         prefix = (
             "Version:0.9\r\n"
             "StartHTML:{0:09d}\r\n"
@@ -154,42 +170,40 @@ table tr:nth-child(2n) { background-color: #f6f8fa; }
             format_id = win32clipboard.RegisterClipboardFormat("HTML Format")
             win32clipboard.SetClipboardData(format_id, cf_html_bytes)
             win32clipboard.CloseClipboard()
+            logging.info("Successfully injected CF_HTML into Windows clipboard.")
         except Exception as e:
-            print(f"Failed to write clipboard: {e}")
+            logging.error(f"Failed to write clipboard: {e}")
             
     elif IS_MAC:
-        # Mac requires RTF via textutil and osascript to set clipboard natively without pyobjc
         try:
-            # 1. Write HTML to temp file
             fd, html_path = tempfile.mkstemp(suffix='.html')
             with os.fdopen(fd, 'w', encoding='utf-8') as f:
-                f.write(f"<html><body>{html}</body></html>")
+                f.write(f"<html><head>{css}</head><body>{html}</body></html>")
             
-            # 2. Convert to RTF via textutil
             rtf_path = html_path.replace('.html', '.rtf')
             subprocess.run(['textutil', '-format', 'html', '-convert', 'rtf', html_path], check=True)
             
-            # 3. Inject to clipboard using AppleScript
-            # The POSIX file path must be passed properly.
             script = f'''
             set the clipboard to {{text:"{text.replace('"', '\\"')}", «class RTF »:read POSIX file "{rtf_path}" as «class RTF »}}
             '''
             subprocess.run(['osascript', '-e', script], check=True)
             
-            # Cleanup
             os.remove(html_path)
             os.remove(rtf_path)
+            logging.info("Successfully injected RTF into macOS clipboard.")
         except Exception as e:
-            print(f"Mac clipboard error: {e}")
+            logging.error(f"Mac clipboard error: {e}")
             
     elif IS_LINUX:
-        # Linux xclip supports HTML natively
         try:
-            subprocess.run(['xclip', '-selection', 'clipboard', '-t', 'text/html', '-i'], input=html.encode('utf-8'), check=True)
-        except:
-            print("Linux xclip error or not installed.")
+            payload = f"<html><head>{css}</head><body>{html}</body></html>"
+            subprocess.run(['xclip', '-selection', 'clipboard', '-t', 'text/html', '-i'], input=payload.encode('utf-8'), check=True)
+            logging.info("Successfully injected HTML into Linux clipboard via xclip.")
+        except Exception as e:
+            logging.error(f"Linux xclip error: {e}")
 
-def write_clipboard_text(text):
+def write_clipboard_text(text: str) -> None:
+    """Restores plain text back into the system clipboard."""
     if IS_WIN:
         try:
             win32clipboard.OpenClipboard()
@@ -197,24 +211,25 @@ def write_clipboard_text(text):
             win32clipboard.SetClipboardData(win32con.CF_UNICODETEXT, text)
             win32clipboard.SetClipboardText(text)
             win32clipboard.CloseClipboard()
-        except:
-            pass
+        except Exception as e:
+            logging.error(f"Failed restoring Windows clipboard text: {e}")
     elif IS_MAC:
         try:
             subprocess.run(['pbcopy'], input=text.encode('utf-8'))
-        except:
-            pass
+        except Exception as e:
+            logging.error(f"Failed restoring Mac clipboard text: {e}")
     elif IS_LINUX:
         try:
             subprocess.run(['xclip', '-selection', 'clipboard', '-i'], input=text.encode('utf-8'))
-        except:
-            pass
+        except Exception as e:
+            logging.error(f"Failed restoring Linux clipboard text: {e}")
 
 # ---------------------------------------------------------
 # Markdown Logic
 # ---------------------------------------------------------
 
-def is_markdown(text):
+def is_markdown(text: str) -> bool:
+    """Detects if the given text contains markdown syntax."""
     patterns = [
         r'```', r'\*\*', r'__', r'^#+\s', r'^\s*[-*+]\s', r'^\s*\d+\.\s', r'\[.*\]\(.*\)', r'>\s'
     ]
@@ -223,13 +238,16 @@ def is_markdown(text):
             return True
     return False
 
-def paste_rich(icon=None, item=None):
-    text = read_clipboard_text()
+def paste_rich(icon: Optional[Any] = None, item: Optional[Any] = None) -> None:
+    """The main routine: reads markdown, parses it, sets clipboard, and simulates a paste keystroke."""
+    logging.info("Triggered PasteRich hotkey.")
+    text: Optional[str] = read_clipboard_text()
     if not text or not text.strip():
+        logging.info("Clipboard is empty.")
         return
         
-    # Smart Detection
     if not is_markdown(text):
+        logging.info("No markdown detected, passing through native paste.")
         if not item:
             keyboard.send('cmd+v' if IS_MAC else 'ctrl+v')
         return
@@ -238,9 +256,8 @@ def paste_rich(icon=None, item=None):
     text_processed = re.sub(r'([^\n])\n(\s*[-*+]\s+)', r'\1\n\n\2', text)
     text_processed = re.sub(r'([^\n])\n(\s*\d+\.\s+)', r'\1\n\n\2', text_processed)
         
-    # Convert markdown to HTML
     extensions = ['extra', 'codehilite', 'sane_lists', 'pymdownx.magiclink', 'pymdownx.tasklist', 'pymdownx.tilde']
-    html = markdown.markdown(text_processed, extensions=extensions, extension_configs={
+    html: str = markdown.markdown(text_processed, extensions=extensions, extension_configs={
         'codehilite': {
             'noclasses': True,
             'pygments_style': config.get("theme", "monokai")
@@ -248,17 +265,15 @@ def paste_rich(icon=None, item=None):
     })
     
     write_clipboard_html(text, html)
-    
     time.sleep(0.1) # Sync clipboard
     
-    # Simulate paste
     if not item: 
         keyboard.send('cmd+v' if IS_MAC else 'ctrl+v')
         
-    # Restore clipboard in background
-    def restore():
+    def restore() -> None:
         time.sleep(0.5)
         write_clipboard_text(text)
+        logging.info("Original clipboard text restored.")
             
     threading.Thread(target=restore, daemon=True).start()
 
@@ -266,10 +281,8 @@ def paste_rich(icon=None, item=None):
 # Auto-Start Logic
 # ---------------------------------------------------------
 
-def get_exe_path():
-    return sys.executable if getattr(sys, 'frozen', False) else os.path.abspath(__file__)
-
-def get_startup_path():
+def get_startup_path() -> Optional[str]:
+    """Resolves the OS-specific path for auto-start configurations."""
     if IS_WIN:
         startup_dir = os.path.join(os.environ['APPDATA'], r'Microsoft\Windows\Start Menu\Programs\Startup')
         return os.path.join(startup_dir, 'PasteRich.lnk')
@@ -279,29 +292,34 @@ def get_startup_path():
         return os.path.expanduser('~/.config/autostart/pasterich.desktop')
     return None
 
-def is_startup_enabled(icon=None, item=None):
+def is_startup_enabled(icon: Optional[Any] = None, item: Optional[Any] = None) -> bool:
+    """Checks if the application is currently configured to run on startup."""
     path = get_startup_path()
     return os.path.exists(path) if path else False
 
-def toggle_startup(icon, item):
+def toggle_startup(icon: Any, item: Any) -> None:
+    """Toggles the auto-start functionality based on the OS."""
     path = get_startup_path()
     if not path:
         return
         
     if os.path.exists(path):
         os.remove(path)
+        logging.info(f"Removed startup script at {path}")
     else:
-        exe_path = get_exe_path()
+        exe_path = get_exe_dir() if getattr(sys, 'frozen', False) else os.path.abspath(__file__)
+        exe_full_path = sys.executable if getattr(sys, 'frozen', False) else os.path.abspath(__file__)
         if IS_WIN:
             try:
                 shell = win32com.client.Dispatch("WScript.Shell")
                 shortcut = shell.CreateShortCut(path)
-                shortcut.Targetpath = exe_path
-                shortcut.WorkingDirectory = os.path.dirname(exe_path)
-                shortcut.IconLocation = exe_path
+                shortcut.Targetpath = exe_full_path
+                shortcut.WorkingDirectory = exe_path
+                shortcut.IconLocation = exe_full_path
                 shortcut.save()
+                logging.info(f"Created Windows startup shortcut at {path}")
             except Exception as e:
-                print(f"Failed to create shortcut: {e}")
+                logging.error(f"Failed to create shortcut: {e}")
         elif IS_MAC:
             plist_content = f"""<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -311,7 +329,7 @@ def toggle_startup(icon, item):
     <string>com.pasterich</string>
     <key>ProgramArguments</key>
     <array>
-        <string>{exe_path}</string>
+        <string>{exe_full_path}</string>
     </array>
     <key>RunAtLoad</key>
     <true/>
@@ -320,10 +338,11 @@ def toggle_startup(icon, item):
             os.makedirs(os.path.dirname(path), exist_ok=True)
             with open(path, 'w') as f:
                 f.write(plist_content)
+            logging.info(f"Created macOS LaunchAgent at {path}")
         elif IS_LINUX:
             desktop_content = f"""[Desktop Entry]
 Type=Application
-Exec={exe_path}
+Exec={exe_full_path}
 Hidden=false
 NoDisplay=false
 X-GNOME-Autostart-enabled=true
@@ -332,14 +351,15 @@ Comment=Start PasteRich daemon"""
             os.makedirs(os.path.dirname(path), exist_ok=True)
             with open(path, 'w') as f:
                 f.write(desktop_content)
+            logging.info(f"Created Linux desktop autostart entry at {path}")
 
 # ---------------------------------------------------------
 # App Main
 # ---------------------------------------------------------
 
-def create_image():
+def create_image() -> Image.Image:
+    """Generates or loads the application icon for the system tray."""
     if getattr(sys, 'frozen', False):
-        # PyInstaller bundles data in sys._MEIPASS
         bundled_icon = os.path.join(sys._MEIPASS, 'assets', 'icon.ico')
         if os.path.exists(bundled_icon):
             return Image.open(bundled_icon)
@@ -348,14 +368,16 @@ def create_image():
     if os.path.exists(icon_path):
         return Image.open(icon_path)
         
+    logging.warning("No icon.ico found in assets, falling back to generated image.")
     image = Image.new('RGB', (64, 64), color=(138, 43, 226))
     return image
 
-def quit_app(icon, item):
+def quit_app(icon: pystray.Icon, item: Any) -> None:
+    """Terminates the application."""
+    logging.info("Shutting down PasteRich.")
     icon.stop()
 
-def main():
-    # Handle manual CLI execution (e.g. for Linux binding)
+def main() -> None:
     if "--paste" in sys.argv:
         paste_rich()
         sys.exit(0)
@@ -371,11 +393,10 @@ def main():
     
     try:
         hotkey = config.get("hotkey", 'ctrl+win+v' if IS_WIN else 'cmd+ctrl+v')
-        keyboard.add_hotkey(hotkey, paste_rich, suppress=True)
-        print(f"Listening on {hotkey}")
+        keyboard.add_hotkey(hotkey, paste_rich, suppress=False)
+        logging.info(f"Successfully bound hotkey: {hotkey}")
     except Exception as e:
-        print(f"Failed to bind hotkey (sudo required on Linux?): {e}")
-        print("Run with --paste argument to trigger manually if background hotkey fails.")
+        logging.error(f"Failed to bind hotkey: {e}")
         
     icon.run()
 
