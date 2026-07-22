@@ -1,0 +1,7 @@
+markdown
+keyboard
+pystray
+Pillow
+pygments
+pymdown-extensions
+pywin32; sys_platform == 'win32'
