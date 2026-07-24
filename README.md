@@ -42,8 +42,8 @@ Copy any text containing Markdown elements (e.g. `**bold**`, `# headers`, or ` `
 
 ### 3. Hit the Hotkey!
 Switch to your target application (Word, Outlook, etc.) and press the global hotkey:
-*   **Windows & Linux:** `Ctrl + Win + V` (Default)
-*   **macOS:** `Cmd + Ctrl + V` (Default)
+*   **Windows & Linux:** `F8` (Default)
+*   **macOS:** `F8` (Default)
 
 The markdown will be rendered as beautiful rich text instantly!
 
@@ -57,7 +57,7 @@ For advanced configuration, PasteRich creates a `config.json` in the same direct
 
 ```json
 {
-    "hotkey": "ctrl+shift+v",
+    "hotkey": "f8",
     "theme": "monokai"
 }
 ```

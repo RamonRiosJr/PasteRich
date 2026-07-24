@@ -18,6 +18,9 @@ def main():
         "-w",
         "-i", "assets/icon.ico",
         "--add-data", f"assets/icon.ico{os.pathsep}assets",
+        "--hidden-import", "pymdownx.magiclink",
+        "--hidden-import", "pymdownx.tasklist",
+        "--hidden-import", "pymdownx.tilde",
         "-n", "PasteRich",
         "pasterich.py"
     ]

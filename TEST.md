@@ -1,6 +1,6 @@
 # PasteRich Markdown Test Suite
 
-Use this file to test all the markdown features supported by PasteRich. Simply copy any section below (or the whole document) and press `Ctrl+Shift+V` in your target application (like Word, Outlook, or Teams).
+Use this file to test all the markdown features supported by PasteRich. Simply copy any section below (or the whole document) and press `F8` in your target application (like Word, Outlook, or Teams).
 
 ---
 

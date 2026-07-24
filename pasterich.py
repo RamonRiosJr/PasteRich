@@ -12,8 +12,7 @@ import keyboard
 import pystray
 from PIL import Image
 from typing import Optional, Dict, Any
-import tkinter as tk
-from tkinter import simpledialog
+
 
 # ---------------------------------------------------------
 # OS-Specific Imports and Helpers
@@ -54,7 +53,7 @@ def get_config_path() -> str:
 def load_config() -> Dict[str, Any]:
     """Loads configuration from config.json, or creates a default if missing."""
     default_config: Dict[str, str] = {
-        "hotkey": "ctrl+win+v" if IS_WIN else "cmd+ctrl+v",
+        "hotkey": "f8" if IS_WIN else "f8",
         "theme": "monokai"
     }
     config_path: str = get_config_path()
@@ -162,7 +161,7 @@ table tr:nth-child(2n) { background-color: #f6f8fa; }
         
         header = prefix.format(start_html, end_html, start_fragment, end_fragment)
         payload = header + html_prefix + html + html_suffix
-        cf_html_bytes = payload.encode('utf-8')
+        cf_html_bytes = payload.encode('utf-8') + b'\0'
         
         try:
             win32clipboard.OpenClipboard()
@@ -270,6 +269,9 @@ def paste_rich(icon: Optional[Any] = None, item: Optional[Any] = None) -> None:
     time.sleep(0.1) # Sync clipboard
     
     if not item: 
+        # Wait for physical modifiers to be released so they don't taint the paste
+        while keyboard.is_pressed('ctrl') or keyboard.is_pressed('shift') or keyboard.is_pressed('alt') or keyboard.is_pressed('windows'):
+            time.sleep(0.01)
         keyboard.send('cmd+v' if IS_MAC else 'ctrl+v')
         
     def restore() -> None:
@@ -381,10 +383,10 @@ def quit_app(icon: pystray.Icon, item: Any) -> None:
 
 def prompt_hotkey_change(icon: pystray.Icon, item: Any) -> None:
     """Spawns a native UI popup to change the hotkey dynamically."""
-    root = tk.Tk()
-    root.withdraw() # Hide the main window
-    new_hotkey = simpledialog.askstring("Change Hotkey", "Enter new hotkey (e.g., ctrl+shift+v):", initialvalue=config.get('hotkey'))
-    root.destroy()
+    default_hotkey = config.get('hotkey', 'f8')
+    ps = f"Add-Type -AssemblyName Microsoft.VisualBasic; [Microsoft.VisualBasic.Interaction]::InputBox('Enter new hotkey (e.g., f8):', 'Change Hotkey', '{default_hotkey}')"
+    result = subprocess.run(["powershell", "-Command", ps], capture_output=True, text=True)
+    new_hotkey = result.stdout.strip()
     
     if new_hotkey and new_hotkey.strip():
         new_hotkey = new_hotkey.strip().lower()
@@ -395,7 +397,7 @@ def prompt_hotkey_change(icon: pystray.Icon, item: Any) -> None:
                 json.dump(config, f, indent=4)
             
             keyboard.unhook_all_hotkeys()
-            keyboard.add_hotkey(new_hotkey, paste_rich, suppress=False)
+            keyboard.add_hotkey(new_hotkey, paste_rich, suppress=True)
             logging.info(f"Hotkey dynamically changed to {new_hotkey}")
         except Exception as e:
             logging.error(f"Failed to change hotkey: {e}")
@@ -417,8 +419,8 @@ def main() -> None:
     icon = pystray.Icon("PasteRich", image, "PasteRich", menu)
     
     try:
-        hotkey = config.get("hotkey", 'ctrl+win+v' if IS_WIN else 'cmd+ctrl+v')
-        keyboard.add_hotkey(hotkey, paste_rich, suppress=False)
+        hotkey = config.get("hotkey", 'f8' if IS_WIN else 'f8')
+        keyboard.add_hotkey(hotkey, paste_rich, suppress=True)
         logging.info(f"Successfully bound hotkey: {hotkey}")
     except Exception as e:
         logging.error(f"Failed to bind hotkey: {e}")
