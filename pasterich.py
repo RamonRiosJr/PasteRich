@@ -428,7 +428,7 @@ def show_about_window() -> None:
 
     title_font = font.Font(family="Segoe UI", size=24, weight="bold")
     tk.Label(root, text="PasteRich", font=title_font, fg="#58A6FF", bg="#0D1117").pack(pady=(30, 5))
-    tk.Label(root, text="Version 1.0.0 | Daemon Active", font=("Segoe UI", 10), fg="#8B949E", bg="#0D1117").pack()
+    tk.Label(root, text="Version 1.1.0 | Daemon Active", font=("Segoe UI", 10), fg="#8B949E", bg="#0D1117").pack()
     tk.Label(root, text="The ultimate cross-platform Markdown clipboard daemon.", 
              font=("Segoe UI", 10), fg="#C9D1D9", bg="#0D1117", wraplength=350, justify="center").pack(pady=(15, 20))
              
