@@ -10,6 +10,7 @@ import logging
 import markdown
 import keyboard
 import pystray
+import webbrowser
 from PIL import Image
 from typing import Optional, Dict, Any
 
@@ -402,6 +403,47 @@ def prompt_hotkey_change(icon: pystray.Icon, item: Any) -> None:
         except Exception as e:
             logging.error(f"Failed to change hotkey: {e}")
 
+def open_url(url: str):
+    def inner(icon, item):
+        webbrowser.open(url)
+    return inner
+
+def show_about_window() -> None:
+    import tkinter as tk
+    from tkinter import font
+    
+    root = tk.Tk()
+    root.title("About PasteRich")
+    root.geometry("450x380")
+    root.configure(bg="#0D1117") # Dark mode background
+    root.attributes('-topmost', True)
+    root.resizable(False, False)
+    
+    # Center window
+    root.update_idletasks()
+    x = (root.winfo_screenwidth() - root.winfo_reqwidth()) / 2
+    y = (root.winfo_screenheight() - root.winfo_reqheight()) / 2
+    root.geometry(f"+{int(x)}+{int(y)}")
+
+    title_font = font.Font(family="Segoe UI", size=24, weight="bold")
+    tk.Label(root, text="PasteRich", font=title_font, fg="#58A6FF", bg="#0D1117").pack(pady=(30, 5))
+    tk.Label(root, text="Version 1.0.0 | Daemon Active", font=("Segoe UI", 10), fg="#8B949E", bg="#0D1117").pack()
+    tk.Label(root, text="The ultimate cross-platform Markdown clipboard daemon.", 
+             font=("Segoe UI", 10), fg="#C9D1D9", bg="#0D1117", wraplength=350, justify="center").pack(pady=(15, 20))
+             
+    btn_style = {"bg": "#21262D", "fg": "#C9D1D9", "activebackground": "#30363D", "activeforeground": "#FFFFFF", 
+                 "font": ("Segoe UI", 10, "bold"), "relief": "flat", "cursor": "hand2", "width": 25, "bd": 0, "pady": 5}
+                 
+    tk.Button(root, text="How To / Documentation", command=lambda: webbrowser.open("https://github.com/RamonRiosJr/PasteRich?tab=readme-ov-file"), **btn_style).pack(pady=5)
+    tk.Button(root, text="Developer: RamonRios.net", command=lambda: webbrowser.open("https://ramonrios.net"), **btn_style).pack(pady=5)
+    tk.Button(root, text="Support Helpdesk", command=lambda: webbrowser.open("https://ramonrios.net/helpdesk"), **btn_style).pack(pady=5)
+    tk.Button(root, text="MIT License", command=lambda: webbrowser.open("https://github.com/RamonRiosJr/PasteRich?tab=MIT-1-ov-file"), **btn_style).pack(pady=5)
+    
+    root.mainloop()
+
+def show_about(icon: pystray.Icon, item: Any) -> None:
+    threading.Thread(target=show_about_window, daemon=True).start()
+
 def main() -> None:
     if "--paste" in sys.argv:
         paste_rich()
@@ -413,6 +455,13 @@ def main() -> None:
         pystray.MenuItem('Paste Rich', paste_rich),
         pystray.MenuItem('Change Hotkey', prompt_hotkey_change),
         pystray.MenuItem('Run on Startup', toggle_startup, checked=is_startup_enabled),
+        pystray.MenuItem(pystray.Menu.SEPARATOR, None),
+        pystray.MenuItem('About PasteRich', show_about),
+        pystray.MenuItem('How To / Docs', open_url("https://github.com/RamonRiosJr/PasteRich?tab=readme-ov-file")),
+        pystray.MenuItem('Support', open_url("https://ramonrios.net/helpdesk")),
+        pystray.MenuItem('License', open_url("https://github.com/RamonRiosJr/PasteRich?tab=MIT-1-ov-file")),
+        pystray.MenuItem('Developer', open_url("https://ramonrios.net")),
+        pystray.MenuItem(pystray.Menu.SEPARATOR, None),
         pystray.MenuItem('Quit', quit_app)
     )
     
