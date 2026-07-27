@@ -53,9 +53,10 @@ def get_config_path() -> str:
 
 def load_config() -> Dict[str, Any]:
     """Loads configuration from config.json, or creates a default if missing."""
-    default_config: Dict[str, str] = {
+    default_config: Dict[str, Any] = {
         "hotkey": "f8" if IS_WIN else "f8",
-        "theme": "monokai"
+        "theme": "monokai",
+        "plugins": {}
     }
     config_path: str = get_config_path()
     
@@ -444,6 +445,30 @@ def show_about_window() -> None:
 def show_about(icon: pystray.Icon, item: Any) -> None:
     threading.Thread(target=show_about_window, daemon=True).start()
 
+def load_plugins() -> None:
+    """Dynamically loads and registers enabled plugins from the plugins/ directory."""
+    plugins_cfg = config.get("plugins", {})
+    if not plugins_cfg:
+        return
+        
+    plugins_dir = os.path.join(get_exe_dir(), 'plugins')
+    if not os.path.exists(plugins_dir):
+        return
+        
+    if plugins_dir not in sys.path:
+        sys.path.insert(0, plugins_dir)
+        
+    import importlib
+    for plugin_name, p_config in plugins_cfg.items():
+        if p_config.get("enabled", False):
+            try:
+                module = importlib.import_module(plugin_name)
+                # Pass the plugin-specific config and a reference to the main pasterich module
+                module.register(p_config, sys.modules[__name__])
+                logging.info(f"Successfully loaded and registered plugin: {plugin_name}")
+            except Exception as e:
+                logging.error(f"Failed to load plugin {plugin_name}: {e}")
+
 def main() -> None:
     if "--paste" in sys.argv:
         paste_rich()
@@ -471,6 +496,9 @@ def main() -> None:
         hotkey = config.get("hotkey", 'f8' if IS_WIN else 'f8')
         keyboard.add_hotkey(hotkey, paste_rich, suppress=True)
         logging.info(f"Successfully bound hotkey: {hotkey}")
+        
+        # Load external plugins after main hotkey is bound
+        load_plugins()
     except Exception as e:
         logging.error(f"Failed to bind hotkey: {e}")
         
