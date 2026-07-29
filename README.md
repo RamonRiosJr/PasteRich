@@ -4,7 +4,7 @@
   <p><b>A lightweight, cross-platform background daemon for converting raw Markdown to Rich Text on the fly.</b></p>
   
   [![License: MIT](https://img.shields.io/badge/License-MIT-purple.svg)](https://opensource.org/licenses/MIT)
-  [![Version](https://img.shields.io/badge/version-1.2.2-blue.svg)](#)
+  [![Version](https://img.shields.io/badge/version-1.2.3-blue.svg)](#)
   [![Platform](https://img.shields.io/badge/platform-windows%20%7C%20macos%20%7C%20linux-lightgrey)](#)
   [![Python](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
 </div>
