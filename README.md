@@ -23,6 +23,8 @@ Instead of running a heavy Electron application, PasteRich operates as an ultra-
 - 🖥️ **Cross-Platform Native Clipboards:** Supports Windows (`CF_HTML`), macOS (`NSPasteboard` via RTF), and Linux (`xclip`/`xsel`).
 - 🪶 **Zero-Overhead Daemon:** Runs silently in the system tray. Absolutely no heavy frontend frameworks.
 - ⌨️ **Dynamic Hotkey GUI:** Change your global shortcut instantly via a native UI popup. No app restarts required!
+- 🔄 **Auto-Updates:** Built-in update checker directly from GitHub releases with seamless one-click downloads.
+- 🚀 **First-Run Welcome Screen:** Clean UI on first launch showing your current hotkey and instructions.
 - 🚀 **Auto-Start:** Built-in support to register itself to run on system boot.
 - 🎨 **Smart CSS Styling:** Uses GitHub's aesthetic for tables, blockquotes, and text.
 - 🧑‍💻 **Code Highlighting:** Full syntax highlighting for code blocks via Pygments (Defaults to `Monokai`).
@@ -51,7 +53,7 @@ The markdown will be rendered as beautiful rich text instantly!
 
 ## ⚙️ Configuration
 
-You can dynamically change your hotkey by **right-clicking the tray icon** and selecting **Change Hotkey**. 
+You can dynamically change your hotkey by **right-clicking the tray icon** and selecting **Change Hotkey**. You can also manually **Check for Updates** or **Refresh Hotkey** from this menu. 
 
 For advanced configuration, PasteRich creates a `config.json` in the same directory as the executable.
 

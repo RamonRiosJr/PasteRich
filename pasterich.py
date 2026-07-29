@@ -11,9 +11,12 @@ import markdown
 import keyboard
 import pystray
 import webbrowser
+import urllib.request
+import urllib.error
+import shutil
 from PIL import Image
 from typing import Optional, Dict, Any
-
+__version__ = "1.2.0"
 
 # ---------------------------------------------------------
 # OS-Specific Imports and Helpers
@@ -56,7 +59,8 @@ def load_config() -> Dict[str, Any]:
     default_config: Dict[str, Any] = {
         "hotkey": "f8" if IS_WIN else "f8",
         "theme": "monokai",
-        "plugins": {}
+        "plugins": {},
+        "has_run_before": False
     }
     config_path: str = get_config_path()
     
@@ -360,6 +364,144 @@ Comment=Start PasteRich daemon"""
             logging.info(f"Created Linux desktop autostart entry at {path}")
 
 # ---------------------------------------------------------
+# Auto-Update Logic
+# ---------------------------------------------------------
+
+def cleanup_old_executable() -> None:
+    """Removes the old executable left behind by a previous update."""
+    if getattr(sys, 'frozen', False) and IS_WIN:
+        exe_path = sys.executable
+        old_exe_path = f"{exe_path}.old"
+        if os.path.exists(old_exe_path):
+            try:
+                os.remove(old_exe_path)
+                logging.info(f"Cleaned up old executable: {old_exe_path}")
+            except Exception as e:
+                logging.error(f"Failed to cleanup old executable: {e}")
+
+def check_for_updates_wrapper(icon: Optional[Any] = None, item: Optional[Any] = None) -> None:
+    threading.Thread(target=check_for_updates, args=(True,), daemon=True).start()
+
+def check_for_updates(manual: bool = False) -> None:
+    """Checks the GitHub repository for new releases."""
+    repo_url = "https://api.github.com/repos/RamonRiosJr/PasteRich/releases/latest"
+    try:
+        req = urllib.request.Request(repo_url, headers={'User-Agent': 'PasteRich'})
+        with urllib.request.urlopen(req) as response:
+            data = json.loads(response.read().decode())
+            latest_version = data.get("tag_name", "").lstrip("v")
+            
+            if not latest_version:
+                if manual:
+                    show_message_box("Update Check", "Could not determine the latest version.")
+                return
+
+            current_tuple = tuple(map(int, __version__.split('.')))
+            latest_tuple = tuple(map(int, latest_version.split('.')))
+
+            if latest_tuple > current_tuple:
+                logging.info(f"New version found: {latest_version}")
+                prompt_update(data, latest_version)
+            else:
+                if manual:
+                    show_message_box("Update Check", f"You are on the latest version ({__version__}).")
+                logging.info("Already on the latest version.")
+    except Exception as e:
+        logging.error(f"Error checking for updates: {e}")
+        if manual:
+            show_message_box("Update Check", f"Failed to check for updates: {e}")
+
+def prompt_update(release_data: dict, new_version: str) -> None:
+    """Prompts the user to update and initiates the download."""
+    msg = f"A new version of PasteRich (v{new_version}) is available. Would you like to download and install it now?"
+    if show_prompt_box("Update Available", msg):
+        threading.Thread(target=perform_update, args=(release_data,), daemon=True).start()
+
+def show_message_box(title: str, msg: str) -> None:
+    """Shows a native message box."""
+    if IS_WIN:
+        ps = f"Add-Type -AssemblyName PresentationFramework; [System.Windows.MessageBox]::Show('{msg}', '{title}')"
+        subprocess.run(["powershell", "-Command", ps], capture_output=True, creationflags=subprocess.CREATE_NO_WINDOW if hasattr(subprocess, 'CREATE_NO_WINDOW') else 0)
+    elif IS_MAC:
+        script = f'display dialog "{msg}" with title "{title}" buttons {{"OK"}} default button "OK"'
+        subprocess.run(["osascript", "-e", script])
+
+def show_prompt_box(title: str, msg: str) -> bool:
+    """Shows a yes/no prompt and returns True if user chose Yes."""
+    if IS_WIN:
+        ps = f"Add-Type -AssemblyName PresentationFramework; $res = [System.Windows.MessageBox]::Show('{msg}', '{title}', 'YesNo'); if ($res -eq 'Yes') {{ exit 0 }} else {{ exit 1 }}"
+        return subprocess.run(["powershell", "-Command", ps], creationflags=subprocess.CREATE_NO_WINDOW if hasattr(subprocess, 'CREATE_NO_WINDOW') else 0).returncode == 0
+    elif IS_MAC:
+        script = f'display dialog "{msg}" with title "{title}" buttons {{"Yes", "No"}} default button "Yes"'
+        res = subprocess.run(["osascript", "-e", script], capture_output=True, text=True)
+        return "button returned:Yes" in res.stdout
+    return False
+
+def perform_update(release_data: dict) -> None:
+    """Downloads and applies the update."""
+    assets = release_data.get("assets", [])
+    target_asset = None
+    
+    # Simple heuristic to pick the right asset based on OS
+    for asset in assets:
+        name = asset.get("name", "").lower()
+        if IS_WIN and name.endswith(".exe"):
+            target_asset = asset
+            break
+        elif IS_MAC and ("mac" in name or "darwin" in name):
+            target_asset = asset
+            break
+        elif IS_LINUX and ("linux" in name):
+            target_asset = asset
+            break
+
+    if not target_asset:
+        logging.error("No suitable asset found for this OS in the latest release.")
+        show_message_box("Update Failed", "No suitable asset found for this OS in the latest release.")
+        return
+
+    download_url = target_asset.get("browser_download_url")
+    logging.info(f"Downloading update from {download_url}...")
+    
+    try:
+        temp_dir = tempfile.mkdtemp()
+        temp_file = os.path.join(temp_dir, target_asset.get("name"))
+        
+        req = urllib.request.Request(download_url, headers={'User-Agent': 'PasteRich'})
+        with urllib.request.urlopen(req) as response, open(temp_file, 'wb') as out_file:
+            shutil.copyfileobj(response, out_file)
+            
+        logging.info("Download complete. Applying update...")
+        
+        if getattr(sys, 'frozen', False):
+            exe_path = sys.executable
+            if IS_WIN:
+                old_exe_path = f"{exe_path}.old"
+                if os.path.exists(old_exe_path):
+                    os.remove(old_exe_path)
+                os.rename(exe_path, old_exe_path)
+                shutil.copy2(temp_file, exe_path)
+            else:
+                shutil.copy2(temp_file, exe_path)
+                os.chmod(exe_path, 0o755)
+                
+            logging.info("Update applied. Restarting...")
+            subprocess.Popen([exe_path])
+            os._exit(0)
+        else:
+            show_message_box("Update Complete", "PasteRich is running as a script. Update downloaded to temp folder, please apply manually.")
+            
+    except Exception as e:
+        logging.error(f"Failed to perform update: {e}")
+        show_message_box("Update Error", f"An error occurred during update: {e}")
+
+def periodic_update_check() -> None:
+    """Checks for updates once a day."""
+    while True:
+        time.sleep(86400) # 24 hours
+        check_for_updates(manual=False)
+
+# ---------------------------------------------------------
 # App Main
 # ---------------------------------------------------------
 
@@ -428,7 +570,7 @@ def show_about_window() -> None:
 
     title_font = font.Font(family="Segoe UI", size=24, weight="bold")
     tk.Label(root, text="PasteRich", font=title_font, fg="#58A6FF", bg="#0D1117").pack(pady=(30, 5))
-    tk.Label(root, text="Version 1.1.0 | Daemon Active", font=("Segoe UI", 10), fg="#8B949E", bg="#0D1117").pack()
+    tk.Label(root, text=f"Version {__version__} | Daemon Active", font=("Segoe UI", 10), fg="#8B949E", bg="#0D1117").pack()
     tk.Label(root, text="The ultimate cross-platform Markdown clipboard daemon.", 
              font=("Segoe UI", 10), fg="#C9D1D9", bg="#0D1117", wraplength=350, justify="center").pack(pady=(15, 20))
              
@@ -444,6 +586,72 @@ def show_about_window() -> None:
 
 def show_about(icon: pystray.Icon, item: Any) -> None:
     threading.Thread(target=show_about_window, daemon=True).start()
+
+def show_welcome_window() -> None:
+    import tkinter as tk
+    from tkinter import font
+    
+    root = tk.Tk()
+    root.title("Welcome to PasteRich")
+    root.geometry("450x450")
+    root.configure(bg="#0D1117")
+    root.attributes('-topmost', True)
+    root.resizable(False, False)
+    
+    # Center window
+    root.update_idletasks()
+    x = (root.winfo_screenwidth() - root.winfo_reqwidth()) / 2
+    y = (root.winfo_screenheight() - root.winfo_reqheight()) / 2
+    root.geometry(f"+{int(x)}+{int(y)}")
+
+    title_font = font.Font(family="Segoe UI", size=24, weight="bold")
+    tk.Label(root, text="Welcome to PasteRich!", font=title_font, fg="#58A6FF", bg="#0D1117").pack(pady=(30, 5))
+    
+    hotkey = config.get("hotkey", "f8")
+    tk.Label(root, text=f"Your current hotkey is: {hotkey.upper()}", font=("Segoe UI", 12, "bold"), fg="#C9D1D9", bg="#0D1117").pack(pady=(10, 5))
+    
+    tk.Label(root, text="Instructions:", font=("Segoe UI", 12, "underline"), fg="#8B949E", bg="#0D1117").pack(pady=(10, 0))
+    tk.Label(root, text=f"1. Copy any Markdown text.\n2. Press {hotkey.upper()} to paste it as rich formatted text.\n3. Check the system tray icon for more options and settings.", 
+             font=("Segoe UI", 10), fg="#C9D1D9", bg="#0D1117", wraplength=350, justify="left").pack(pady=(5, 15))
+             
+    # Check update status
+    lbl_update = tk.Label(root, text="Checking for updates...", font=("Segoe UI", 10, "italic"), fg="#8B949E", bg="#0D1117")
+    lbl_update.pack(pady=(10, 5))
+    
+    btn_style = {"bg": "#21262D", "fg": "#C9D1D9", "activebackground": "#30363D", "activeforeground": "#FFFFFF", 
+                 "font": ("Segoe UI", 10, "bold"), "relief": "flat", "cursor": "hand2", "width": 15, "bd": 0, "pady": 5}
+                 
+    update_btn = tk.Button(root, text="Download Update", bg="#238636", fg="#ffffff", activebackground="#2EA043", 
+                           activeforeground="#FFFFFF", font=("Segoe UI", 10, "bold"), relief="flat", cursor="hand2", width=20, bd=0, pady=5)
+
+    def check_updates_bg():
+        repo_url = "https://api.github.com/repos/RamonRiosJr/PasteRich/releases/latest"
+        try:
+            req = urllib.request.Request(repo_url, headers={'User-Agent': 'PasteRich'})
+            with urllib.request.urlopen(req, timeout=5) as response:
+                data = json.loads(response.read().decode())
+                latest_version = data.get("tag_name", "").lstrip("v")
+                
+                if latest_version:
+                    current_tuple = tuple(map(int, __version__.split('.')))
+                    latest_tuple = tuple(map(int, latest_version.split('.')))
+                    if latest_tuple > current_tuple:
+                        lbl_update.config(text=f"Update Available: v{latest_version}", fg="#3FB950", font=("Segoe UI", 10, "bold"))
+                        update_btn.config(command=lambda: [root.destroy(), threading.Thread(target=perform_update, args=(data,), daemon=True).start()])
+                        update_btn.pack(pady=5)
+                        return
+                lbl_update.config(text=f"PasteRich is up to date (v{__version__}).", fg="#8B949E", font=("Segoe UI", 10))
+        except Exception as e:
+            logging.error(f"Error checking updates on welcome screen: {e}")
+            lbl_update.config(text="Could not check for updates.")
+
+    threading.Thread(target=check_updates_bg, daemon=True).start()
+    
+    tk.Button(root, text="Get Started", command=root.destroy, **btn_style).pack(pady=(15, 20))
+    root.mainloop()
+
+def show_welcome(icon: Optional[pystray.Icon] = None, item: Optional[Any] = None) -> None:
+    threading.Thread(target=show_welcome_window, daemon=True).start()
 
 def load_plugins() -> None:
     """Dynamically loads and registers enabled plugins from the plugins/ directory."""
@@ -469,6 +677,25 @@ def load_plugins() -> None:
             except Exception as e:
                 logging.error(f"Failed to load plugin {plugin_name}: {e}")
 
+def rebind_hotkey(icon: Optional[Any] = None, item: Optional[Any] = None) -> None:
+    """Refreshes the hotkey binding."""
+    try:
+        hotkey = config.get("hotkey", 'f8' if IS_WIN else 'f8')
+        keyboard.unhook_all_hotkeys()
+        keyboard.add_hotkey(hotkey, paste_rich, suppress=True)
+        logging.info(f"Successfully rebound hotkey: {hotkey}")
+    except Exception as e:
+        logging.error(f"Failed to rebind hotkey: {e}")
+
+def periodic_refresh() -> None:
+    """Periodically refreshes the hotkey binding to prevent it from dropping."""
+    while True:
+        time.sleep(600)  # Refresh every 10 minutes
+        try:
+            rebind_hotkey()
+        except Exception:
+            pass
+
 def main() -> None:
     if "--paste" in sys.argv:
         paste_rich()
@@ -479,6 +706,8 @@ def main() -> None:
         pystray.MenuItem(lambda text: f"Hotkey: {config.get('hotkey')}", lambda icon, item: None, enabled=False),
         pystray.MenuItem('Paste Rich', paste_rich),
         pystray.MenuItem('Change Hotkey', prompt_hotkey_change),
+        pystray.MenuItem('Refresh Hotkey', rebind_hotkey),
+        pystray.MenuItem('Check for Updates', check_for_updates_wrapper),
         pystray.MenuItem('Run on Startup', toggle_startup, checked=is_startup_enabled),
         pystray.MenuItem(pystray.Menu.SEPARATOR, None),
         pystray.MenuItem('About PasteRich', show_about),
@@ -492,6 +721,13 @@ def main() -> None:
     
     icon = pystray.Icon("PasteRich", image, "PasteRich", menu)
     
+    # Clean up old executable on startup
+    cleanup_old_executable()
+    
+    # Start background threads
+    threading.Thread(target=periodic_refresh, daemon=True).start()
+    threading.Thread(target=periodic_update_check, daemon=True).start()
+    
     try:
         hotkey = config.get("hotkey", 'f8' if IS_WIN else 'f8')
         keyboard.add_hotkey(hotkey, paste_rich, suppress=True)
@@ -499,6 +735,17 @@ def main() -> None:
         
         # Load external plugins after main hotkey is bound
         load_plugins()
+        
+        # Check for first run
+        if not config.get("has_run_before", False):
+            config["has_run_before"] = True
+            try:
+                with open(get_config_path(), 'w') as f:
+                    json.dump(config, f, indent=4)
+                show_welcome()
+            except Exception as e:
+                logging.error(f"Failed to save first run state: {e}")
+                
     except Exception as e:
         logging.error(f"Failed to bind hotkey: {e}")
         
