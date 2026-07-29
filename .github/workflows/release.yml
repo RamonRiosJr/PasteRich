@@ -1,0 +1,73 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: windows-latest
+            artifact_name: PasteRich.exe
+            asset_name: PasteRich-Windows.exe
+          - os: macos-latest
+            artifact_name: PasteRich
+            asset_name: PasteRich-macOS
+          - os: ubuntu-latest
+            artifact_name: PasteRich
+            asset_name: PasteRich-Linux
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+    - run: pip install -r requirements.txt
+    - run: python build.py
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ matrix.asset_name }}
+        path: dist/${{ matrix.artifact_name }}
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - name: Download Windows artifact
+      uses: actions/download-artifact@v4
+      with:
+        name: PasteRich-Windows.exe
+        path: ./artifacts/windows
+    - name: Download macOS artifact
+      uses: actions/download-artifact@v4
+      with:
+        name: PasteRich-macOS
+        path: ./artifacts/macos
+    - name: Download Linux artifact
+      uses: actions/download-artifact@v4
+      with:
+        name: PasteRich-Linux
+        path: ./artifacts/linux
+    - name: Rename artifacts
+      run: |
+        mv ./artifacts/windows/PasteRich.exe ./PasteRich-Windows.exe
+        mv ./artifacts/macos/PasteRich ./PasteRich-macOS
+        mv ./artifacts/linux/PasteRich ./PasteRich-Linux || echo "Linux missing"
+      continue-on-error: true
+    - name: Create Release
+      uses: softprops/action-gh-release@v1
+      with:
+        files: |
+          ./PasteRich-Windows.exe
+          ./PasteRich-macOS
+          ./PasteRich-Linux
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
