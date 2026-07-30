@@ -16,7 +16,7 @@ import urllib.error
 import shutil
 from PIL import Image
 from typing import Optional, Dict, Any
-__version__ = "1.2.3"
+__version__ = "1.2.4"
 
 # ---------------------------------------------------------
 # OS-Specific Imports and Helpers
