@@ -18,11 +18,11 @@ jobs:
             artifact_name: PasteRich.exe
             asset_name: PasteRich-Windows.exe
           - os: macos-latest
-            artifact_name: PasteRich
-            asset_name: PasteRich-macOS
+            artifact_name: PasteRich-macOS.zip
+            asset_name: PasteRich-macOS.zip
           - os: ubuntu-latest
-            artifact_name: PasteRich
-            asset_name: PasteRich-Linux
+            artifact_name: PasteRich-Linux.zip
+            asset_name: PasteRich-Linux.zip
     steps:
     - uses: actions/checkout@v4
     - uses: actions/setup-python@v5
@@ -30,11 +30,21 @@ jobs:
         python-version: '3.11'
     - run: pip install -r requirements.txt
     - run: python build.py
+    - name: Zip Mac/Linux Artifacts
+      if: runner.os != 'Windows'
+      run: |
+        cd dist
+        zip -r ../${{ matrix.artifact_name }} ./*
+        cd ..
+    - name: Prepare Windows Artifact
+      if: runner.os == 'Windows'
+      run: |
+        copy dist\PasteRich.exe ${{ matrix.artifact_name }}
     - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
         name: ${{ matrix.asset_name }}
-        path: dist/${{ matrix.artifact_name }}
+        path: ${{ matrix.artifact_name }}
 
   release:
     needs: build
@@ -49,25 +59,25 @@ jobs:
     - name: Download macOS artifact
       uses: actions/download-artifact@v4
       with:
-        name: PasteRich-macOS
+        name: PasteRich-macOS.zip
         path: ./artifacts/macos
     - name: Download Linux artifact
       uses: actions/download-artifact@v4
       with:
-        name: PasteRich-Linux
+        name: PasteRich-Linux.zip
         path: ./artifacts/linux
     - name: Rename artifacts
       run: |
         mv ./artifacts/windows/PasteRich.exe ./PasteRich-Windows.exe
-        mv ./artifacts/macos/PasteRich ./PasteRich-macOS
-        mv ./artifacts/linux/PasteRich ./PasteRich-Linux || echo "Linux missing"
-      continue-on-error: true
+        mv ./artifacts/macos/PasteRich-macOS.zip ./PasteRich-macOS.zip
+        mv ./artifacts/linux/PasteRich-Linux.zip ./PasteRich-Linux.zip
     - name: Create Release
       uses: softprops/action-gh-release@v1
       with:
         files: |
           ./PasteRich-Windows.exe
-          ./PasteRich-macOS
-          ./PasteRich-Linux
+          ./PasteRich-macOS.zip
+          ./PasteRich-Linux.zip
+        fail_on_unmatched_files: false
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
