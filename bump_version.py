@@ -15,14 +15,14 @@ def main():
     print(f"Bumping version to {version}...")
     
     # 1. Update pasterich.py
-    with open('pasterich.py', 'r') as f:
+    with open('pasterich.py', 'r', encoding='utf-8') as f:
         content = f.read()
     content = re.sub(r'__version__ = ".*?"', f'__version__ = "{version}"', content)
-    with open('pasterich.py', 'w') as f:
+    with open('pasterich.py', 'w', encoding='utf-8') as f:
         f.write(content)
         
     # 2. Update README.md
-    with open('README.md', 'r') as f:
+    with open('README.md', 'r', encoding='utf-8') as f:
         content = f.read()
     
     # If there's no version badge, add it
@@ -31,7 +31,7 @@ def main():
     else:
         content = re.sub(r'badge/version-.*?-blue', f'badge/version-{version}-blue', content)
         
-    with open('README.md', 'w') as f:
+    with open('README.md', 'w', encoding='utf-8') as f:
         f.write(content)
         
     # 3. Commit and tag
